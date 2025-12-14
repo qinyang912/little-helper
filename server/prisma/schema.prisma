@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  username  String    @unique
+  password  String
+  name      String
+  score     Int       @default(0)
+  role      String    @default("CHILD")
+  familyId  String?   @default("default") // Used to group family members
+  birthDate DateTime?
+  gender    String?
+
+  parentId Int?
+  parent   User?   @relation("ParentChildren", fields: [parentId], references: [id])
+  children User[]  @relation("ParentChildren")
+
+  chores        Chore[]
+  rewards       Reward[]
+  inventory     InventoryItem[]
+  pendingActions PendingAction[]
+  history       History[]
+}
+
+model Chore {
+  id      Int    @id @default(autoincrement())
+  name    String
+  points  Int
+  icon    String
+  userId  Int
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Reward {
+  id      Int    @id @default(autoincrement())
+  name    String
+  cost    Int
+  icon    String
+  userId  Int
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PendingAction {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  choreName  String
+  points     Int
+  icon       String
+  submitTime DateTime @default(now())
+}
+
+model InventoryItem {
+  id         Int    @id @default(autoincrement())
+  userId     Int
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rewardName String
+  icon       String
+  count      Int    @default(1)
+}
+
+model History {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // "CHORE" or "REWARD"
+  name      String   // Chore name or Reward name
+  amount    Int      // Points earned or spent
+  icon      String
+  createdAt DateTime @default(now())
+}
