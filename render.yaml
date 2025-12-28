@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: little-helper-server
+    env: node
+    rootDir: server
+    # Render automatically installs dependencies if package.json is present.
+    # We also need to generate the Prisma Client.
+    buildCommand: npm install && npx prisma generate
+    startCommand: node index.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false # You will need to enter this in the Render dashboard
+      - key: JWT_SECRET
+        generateValue: true # Render will generate a random secret for you
+      - key: CLIENT_URL
+        sync: false # Enter your frontend URL here (e.g. https://your-app.vercel.app)
+      - key: PORT
+        value: 10000
+    plan: free

@@ -12,13 +12,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
     methods: ["GET", "POST"]
   }
 });
 
 const prisma = new PrismaClient();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const SECRET_KEY = process.env.JWT_SECRET || 'super_secret_key_123';
 
 app.use(cors());
@@ -80,21 +80,21 @@ const notifyFamily = async (userId, event, data) => {
     if (!user) return;
 
     if (user.familyId) {
-       // Broadcast to the entire family room
-       io.to(`family-${user.familyId}`).emit(event, data);
+      // Broadcast to the entire family room
+      io.to(`family-${user.familyId}`).emit(event, data);
     } else {
-        // Fallback for legacy logic (should be rare)
-        if (user.role === 'CHILD' && user.parentId) {
-            notifyUser(userId, event, data);
-            notifyUser(user.parentId, event, data);
-        } else if (user.role === 'PARENT') {
-            notifyUser(userId, event, data);
-            const children = await prisma.user.findMany({
-                where: { parentId: userId },
-                select: { id: true }
-            });
-            children.forEach(child => notifyUser(child.id, event, data));
-        }
+      // Fallback for legacy logic (should be rare)
+      if (user.role === 'CHILD' && user.parentId) {
+        notifyUser(userId, event, data);
+        notifyUser(user.parentId, event, data);
+      } else if (user.role === 'PARENT') {
+        notifyUser(userId, event, data);
+        const children = await prisma.user.findMany({
+          where: { parentId: userId },
+          select: { id: true }
+        });
+        children.forEach(child => notifyUser(child.id, event, data));
+      }
     }
   } catch (error) {
     console.error('推送通知失败:', error);
@@ -151,18 +151,18 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Backfill familyId for legacy users
     if (!user.familyId) {
-        const newFamilyId = randomUUID();
-        await prisma.$transaction([
-            prisma.user.update({
-                where: { id: user.id },
-                data: { familyId: newFamilyId }
-            }),
-            prisma.user.updateMany({
-                where: { parentId: user.id },
-                data: { familyId: newFamilyId }
-            })
-        ]);
-        user.familyId = newFamilyId;
+      const newFamilyId = randomUUID();
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: user.id },
+          data: { familyId: newFamilyId }
+        }),
+        prisma.user.updateMany({
+          where: { parentId: user.id },
+          data: { familyId: newFamilyId }
+        })
+      ]);
+      user.familyId = newFamilyId;
     }
 
     const token = jwt.sign({ id: user.id, role: user.role, name: user.name, familyId: user.familyId }, SECRET_KEY);
@@ -174,7 +174,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/create-child', authenticateToken, async (req, res) => {
   if (req.user.role !== 'PARENT') return res.sendStatus(403);
-  
+
   const { username, password, name } = req.body;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -197,7 +197,7 @@ app.post('/api/auth/create-child', authenticateToken, async (req, res) => {
 
 app.post('/api/auth/create-parent', authenticateToken, async (req, res) => {
   if (req.user.role !== 'PARENT') return res.sendStatus(403);
-  
+
   const { username, password, name } = req.body;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -245,8 +245,8 @@ app.get('/api/users/:id', authenticateToken, async (req, res) => {
   const targetId = parseInt(req.params.id);
   if (req.user.role === 'CHILD' && req.user.id !== targetId) return res.sendStatus(403);
   if (req.user.role === 'PARENT') {
-     const target = await prisma.user.findUnique({ where: { id: targetId }});
-     if (target.familyId !== req.user.familyId) return res.sendStatus(403);
+    const target = await prisma.user.findUnique({ where: { id: targetId } });
+    if (target.familyId !== req.user.familyId) return res.sendStatus(403);
   }
 
   try {
@@ -266,7 +266,7 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
   const { name, birthDate, gender } = req.body;
 
   try {
-    const target = await prisma.user.findUnique({ where: { id: targetId }});
+    const target = await prisma.user.findUnique({ where: { id: targetId } });
     if (!target || target.familyId !== req.user.familyId) {
       return res.sendStatus(403);
     }
@@ -293,7 +293,7 @@ app.put('/api/users/:id/reset-password', authenticateToken, async (req, res) => 
   const { newPassword } = req.body;
 
   try {
-    const target = await prisma.user.findUnique({ where: { id: targetId }});
+    const target = await prisma.user.findUnique({ where: { id: targetId } });
     if (!target || target.familyId !== req.user.familyId) {
       return res.sendStatus(403);
     }
@@ -313,7 +313,7 @@ app.put('/api/users/:id/reset-password', authenticateToken, async (req, res) => 
 app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   if (req.user.role !== 'PARENT') return res.sendStatus(403);
   const targetId = parseInt(req.params.id);
-  const target = await prisma.user.findUnique({ where: { id: targetId }});
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
   if (target.familyId !== req.user.familyId) return res.sendStatus(403);
 
   try {
@@ -357,31 +357,31 @@ app.delete('/api/chores/:id', authenticateToken, async (req, res) => {
     const affectedUserId = chore.userId;
 
     if (deleteAll) {
-        // Delete all chores with same name for all my children
-        await prisma.chore.deleteMany({
-            where: {
-                name: chore.name,
-                user: { familyId: req.user.familyId, role: 'CHILD' }
-            }
-        });
-
-        // 通知所有孩子
-        const children = await prisma.user.findMany({
-          where: { familyId: req.user.familyId, role: 'CHILD' },
-          select: { id: true }
-        });
-        for (const child of children) {
-          await notifyFamily(child.id, 'data-updated', { type: 'chore-deleted', userId: child.id });
+      // Delete all chores with same name for all my children
+      await prisma.chore.deleteMany({
+        where: {
+          name: chore.name,
+          user: { familyId: req.user.familyId, role: 'CHILD' }
         }
+      });
 
-        res.json({ message: 'Deleted all chores' });
+      // 通知所有孩子
+      const children = await prisma.user.findMany({
+        where: { familyId: req.user.familyId, role: 'CHILD' },
+        select: { id: true }
+      });
+      for (const child of children) {
+        await notifyFamily(child.id, 'data-updated', { type: 'chore-deleted', userId: child.id });
+      }
+
+      res.json({ message: 'Deleted all chores' });
     } else {
-        await prisma.chore.delete({ where: { id } });
+      await prisma.chore.delete({ where: { id } });
 
-        // 实时推送通知
-        await notifyFamily(affectedUserId, 'data-updated', { type: 'chore-deleted', userId: affectedUserId });
+      // 实时推送通知
+      await notifyFamily(affectedUserId, 'data-updated', { type: 'chore-deleted', userId: affectedUserId });
 
-        res.json({ message: 'Chore deleted' });
+      res.json({ message: 'Chore deleted' });
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -418,30 +418,30 @@ app.delete('/api/rewards/:id', authenticateToken, async (req, res) => {
     const affectedUserId = reward.userId;
 
     if (deleteAll) {
-        await prisma.reward.deleteMany({
-            where: {
-                name: reward.name,
-                user: { familyId: req.user.familyId, role: 'CHILD' }
-            }
-        });
-
-        // 通知所有孩子
-        const children = await prisma.user.findMany({
-          where: { familyId: req.user.familyId, role: 'CHILD' },
-          select: { id: true }
-        });
-        for (const child of children) {
-          await notifyFamily(child.id, 'data-updated', { type: 'reward-deleted', userId: child.id });
+      await prisma.reward.deleteMany({
+        where: {
+          name: reward.name,
+          user: { familyId: req.user.familyId, role: 'CHILD' }
         }
+      });
 
-        res.json({ message: 'Deleted all rewards' });
+      // 通知所有孩子
+      const children = await prisma.user.findMany({
+        where: { familyId: req.user.familyId, role: 'CHILD' },
+        select: { id: true }
+      });
+      for (const child of children) {
+        await notifyFamily(child.id, 'data-updated', { type: 'reward-deleted', userId: child.id });
+      }
+
+      res.json({ message: 'Deleted all rewards' });
     } else {
-        await prisma.reward.delete({ where: { id } });
+      await prisma.reward.delete({ where: { id } });
 
-        // 实时推送通知
-        await notifyFamily(affectedUserId, 'data-updated', { type: 'reward-deleted', userId: affectedUserId });
+      // 实时推送通知
+      await notifyFamily(affectedUserId, 'data-updated', { type: 'reward-deleted', userId: affectedUserId });
 
-        res.json({ message: 'Reward deleted' });
+      res.json({ message: 'Reward deleted' });
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -491,7 +491,7 @@ app.post('/api/actions/approve/:id', authenticateToken, async (req, res) => {
   try {
     const action = await prisma.pendingAction.findUnique({ where: { id } });
     if (!action) return res.status(404).json({ error: 'Action not found' });
-    const child = await prisma.user.findUnique({ where: { id: action.userId }});
+    const child = await prisma.user.findUnique({ where: { id: action.userId } });
     if (child.familyId !== req.user.familyId) return res.sendStatus(403);
 
     await prisma.$transaction([
@@ -542,34 +542,34 @@ app.post('/api/actions/reject/:id', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/actions/complete-direct', authenticateToken, async (req, res) => {
-    if (req.user.role !== 'PARENT') return res.sendStatus(403);
-    const { userId, choreId } = req.body;
-    try {
-        const chore = await prisma.chore.findUnique({ where: { id: choreId }});
-        await prisma.$transaction([
-          prisma.user.update({
-              where: { id: userId },
-              data: { score: { increment: chore.points }}
-          }),
-          // Add History
-          prisma.history.create({
-            data: {
-              userId,
-              type: 'CHORE',
-              name: chore.name,
-              amount: chore.points,
-              icon: chore.icon
-            }
-          })
-        ]);
+  if (req.user.role !== 'PARENT') return res.sendStatus(403);
+  const { userId, choreId } = req.body;
+  try {
+    const chore = await prisma.chore.findUnique({ where: { id: choreId } });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { score: { increment: chore.points } }
+      }),
+      // Add History
+      prisma.history.create({
+        data: {
+          userId,
+          type: 'CHORE',
+          name: chore.name,
+          amount: chore.points,
+          icon: chore.icon
+        }
+      })
+    ]);
 
-        // 实时推送通知
-        await notifyFamily(userId, 'data-updated', { type: 'chore-completed', userId });
+    // 实时推送通知
+    await notifyFamily(userId, 'data-updated', { type: 'chore-completed', userId });
 
-        res.json({ message: 'Completed' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    res.json({ message: 'Completed' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.post('/api/actions/redeem', authenticateToken, async (req, res) => {
@@ -600,17 +600,17 @@ app.post('/api/actions/redeem', authenticateToken, async (req, res) => {
       // 如果已存在，增加数量；否则创建新记录
       existingItem
         ? prisma.inventoryItem.update({
-            where: { id: existingItem.id },
-            data: { count: { increment: 1 } }
-          })
+          where: { id: existingItem.id },
+          data: { count: { increment: 1 } }
+        })
         : prisma.inventoryItem.create({
-            data: {
-              userId,
-              rewardName: reward.name,
-              icon: reward.icon,
-              count: 1,
-            },
-          }),
+          data: {
+            userId,
+            rewardName: reward.name,
+            icon: reward.icon,
+            count: 1,
+          },
+        }),
       // 添加历史记录
       prisma.history.create({
         data: {
@@ -649,9 +649,9 @@ app.post('/api/actions/use-reward', authenticateToken, async (req, res) => {
       // 如果数量大于1，减少数量；否则删除记录
       item.count > 1
         ? prisma.inventoryItem.update({
-            where: { id: itemId },
-            data: { count: { decrement: 1 } }
-          })
+          where: { id: itemId },
+          data: { count: { decrement: 1 } }
+        })
         : prisma.inventoryItem.delete({ where: { id: itemId } }),
       // 创建历史记录
       prisma.history.create({
@@ -679,8 +679,8 @@ app.post('/api/score/reset', authenticateToken, async (req, res) => {
   const { userId } = req.body;
   try {
     await prisma.$transaction([
-       prisma.user.update({ where: { id: userId }, data: { score: 0 } }),
-       prisma.history.deleteMany({ where: { userId } }) // Clean history too? Maybe yes.
+      prisma.user.update({ where: { id: userId }, data: { score: 0 } }),
+      prisma.history.deleteMany({ where: { userId } }) // Clean history too? Maybe yes.
     ]);
     res.json({ message: 'Score reset' });
   } catch (error) {
