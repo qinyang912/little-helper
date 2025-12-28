@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`,
 });
 
 // Request Interceptor: Attach Token
@@ -25,7 +25,7 @@ export const createParent = (username, password, name) => api.post('/auth/create
 export const getUsers = () => api.get('/users');
 export const getUserData = (id) => api.get(`/users/${id}`);
 export const createUser = (name) => {
-    return api.post('/auth/create-child', { username: name + Date.now(), password: '123', name });
+  return api.post('/auth/create-child', { username: name + Date.now(), password: '123', name });
 };
 export const updateUser = (id, data) => api.put(`/users/${id}`, data);
 export const resetPassword = (id, newPassword) => api.put(`/users/${id}/reset-password`, { newPassword });

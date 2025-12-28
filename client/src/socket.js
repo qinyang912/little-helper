@@ -7,7 +7,7 @@ export const initSocket = () => {
     // 从 localStorage 获取 token
     const token = localStorage.getItem('token');
 
-    socket = io('http://localhost:3000', {
+    socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', {
       autoConnect: false,
       reconnection: true,
       reconnectionDelay: 1000,
